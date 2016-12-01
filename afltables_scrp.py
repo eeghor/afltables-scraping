@@ -85,7 +85,9 @@ for year in range(y_from, y_to + 1):
 
 		nbs = len(all_bs_in_table)
 
-		if len(all_bs_in_table) in [1,3]:  # if indeed found 3 <b>, then assume this is a round table
+		# print("first b text=", all_bs_in_table[0].text.strip())
+		# print("and is thi sFinals?",all_bs_in_table[0].text.strip() != "Finals")
+		if (len(all_bs_in_table) in [1,3]) and (all_bs_in_table[0].text.strip() != "Finals"):  # if indeed found 3 <b>, then assume this is a round table
 
 			if nbs == 3:
 
@@ -106,7 +108,7 @@ for year in range(y_from, y_to + 1):
 					list_total_att.append(None)
 
 			else:
-				continue  # go to the next round table
+				pass  # go to the next round table
 
 			# findNext follows an object's next member gathering Tag or NavigableText
 			# objects that match the specified criteria:
@@ -116,12 +118,15 @@ for year in range(y_from, y_to + 1):
 
 			nxt = tb_round
 
-			not_next_round = 1
+			not_next_round = True
 
 			while not_next_round:
 
 				# the below is hopefully a result table:
-				nxt = nxt.findNext("table", {"style": "font: 12px Verdana;", "border": "1"})
+				# nxt = nxt.findNext("table", {"style": "font: 12px Verdana;", "border": 1})
+				nxt = nxt.findNext("table")
+
+				print("next table border is:",nxt["border"])
 
 				# this table would normally have 2 rows..
 
@@ -167,7 +172,7 @@ for year in range(y_from, y_to + 1):
 	
 					list_dates.append(team1_tr.find_all("td")[3].text.split("Att")[0].strip())
 				else:
-					not_next_round = 0
+					not_next_round = False
 
 # now combine everything into a zip
 data = zip(list_rounds, list_dates, list_team_1, 
