@@ -10,17 +10,23 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import pandas as pd
+from collections import defaultdict
 
 # choose the range of years you are interested in; the earliest available year is 1897
-y_from = 1998
-y_to = 2016
+y_from = 2003
+y_to = 2007
 
 """
 choose what format to save data in:
 	0 : don't save at all, just show first 10 rdata ows on screen
 	1 : save as a table in .CSV 
+	2 : save as a JSON file
 """
 save_flag = 1
+
+# want to see yearly counts for the retrieved records? 1 for yes
+
+show_yrecs = 1
 
 # sanity check
 
@@ -56,6 +62,8 @@ list_q3_team2 = []
 list_q4_team2 = []
 list_q5_team2 = []
 
+# stats per year
+statsy = defaultdict(lambda: defaultdict(int))
 
 for year in range(y_from, y_to + 1):
 	
@@ -76,105 +84,109 @@ for year in range(y_from, y_to + 1):
 	# find table with border 2; there are Round, Attendance, and Total Attendance; alternatively, 
 	# the table may be related to finals, which means that there's the word Finals or similar and nothing else
 
-	for tb_round in soup.find_all("table",  attrs={'border' : '2'}):
+	def is_qualification(tb):
 
-		# so we start from the first detected table with border=2, which is hopefully describing a round
-		# find all <b> in this table; normally, there will be 3 of these and only the Finals tables have one
+		if (tb.b and 
+			(tb.b.string.strip() != "Finals") and 
+			(len(tb.find_all("tr")) == 1) and 
+				(len(tb.find_all("td")) == 1)):
+			return True
+		else:
+			return False
 
-		all_bs_in_table = tb_round.find_all("b")
+	def is_match(tb):
 
-		nbs = len(all_bs_in_table)
+		if (len(tb.find_all("tr")) == 2 and
+				tb.has_attr("border") and
+					 tb["border"] == "1"):
+			return True
+		else:
+			return False
 
-		# print("first b text=", all_bs_in_table[0].text.strip())
-		# print("and is thi sFinals?",all_bs_in_table[0].text.strip() != "Finals")
-		if (len(all_bs_in_table) in [1,3]) and (all_bs_in_table[0].text.strip() != "Finals"):  # if indeed found 3 <b>, then assume this is a round table
+	#
+	# is this tag a table that sits right on top of the match result tables
+	# 
+	def is_round(tb):
 
-			if nbs == 3:
+		if (tb.has_attr("border") and 
+				tb["border"] == "2" and
+			 		len(tb.find_all("tr")) == 1 and 
+			 			len(tb.find_all("td")) == 2):
+			return True
+		else:
+			return False
 
-				b_round, b_round_attendance, b_total_attendance = all_bs_in_table
-	
-				this_round = b_round.text.strip().lower()
-				list_round_att.append(b_round_attendance.next_sibling.strip().lower())
-				list_total_att.append(b_total_attendance.next_sibling.strip().lower())
+	mtb = 0
+
+	for i, this_header_tbl in enumerate(soup.find_all("table")):
+
+		if is_round(this_header_tbl):
+
+			statsy[year]["number_rounds"] += 1
 			
-			elif nbs == 1:
+			td1, td2 = this_header_tbl.find_all("td")
 
-				if len(all_bs_in_table[0].text.split()) > 1:  #  so it's not Finals
+			this_round = td1.text.strip().lower()
 
-					b_round = all_bs_in_table[0]
-	
-					this_round = b_round.text.strip().lower()
-					list_round_att.append(None)
-					list_total_att.append(None)
+			t2b1, t2b2 = td2.find_all("b")
 
+			list_round_att.append(t2b1.next_sibling.strip().lower())
+			list_total_att.append(t2b2.next_sibling.strip().lower())
+
+		if is_match(this_header_tbl):
+
+			
+			statsy[year]["number_games"] += 1
+
+			list_rounds.append(this_round)
+
+			team1_tr, team2_tr = this_header_tbl.find_all("tr")
+			list_team_1.append(team1_tr.find("a", {"href": re.compile("teams{1}")}).text.strip())
+			list_team_2.append(team2_tr.find("a", {"href": re.compile("teams{1}")}).text.strip())
+			qscores_t1 = team1_tr.find("tt").text.split()
+			qscores_t2 = team2_tr.find("tt").text.split()
+
+			q1t1, q2t1, q3t1, q4t1 = qscores_t1[:4]
+			q1t2, q2t2, q3t2, q4t2 = qscores_t2[:4]
+
+			if (len(qscores_t1) == 5) and (len(qscores_t2) == 5):
+				q5t1 = qscores_t1[-1][1:-1]
+				q5t2 = qscores_t2[-1][1:-1]
 			else:
-				pass  # go to the next round table
+				q5t1 = None
+				q5t2 = None
 
-			# findNext follows an object's next member gathering Tag or NavigableText
-			# objects that match the specified criteria:
+			list_q1_team1.append(q1t1)
+			list_q2_team1.append(q2t1)
+			list_q3_team1.append(q3t1)
+			list_q4_team1.append(q4t1)
+			list_q5_team1.append(q5t1)
+			list_q1_team2.append(q1t2)
+			list_q2_team2.append(q2t2)
+			list_q3_team2.append(q3t2)
+			list_q4_team2.append(q4t2)
+			list_q5_team2.append(q5t2)
+
+			list_score_1.append(team1_tr.find("td", {'width': "5%"}).text.strip())
+			list_score_2.append(team2_tr.find("td", {'width': "5%"}).text.strip())
 			
-			# so this is the current round table; we want to move on to the next table which is supposed to
-			# have border=1 and contain match results
+			list_venues.append(team1_tr.find("a", {"href": re.compile("venues{1}")}).text.strip())
 
-			nxt = tb_round
+			tr1td1,tr1td2,tr1td3,tr1td4 = team1_tr.find_all("td")
 
-			not_next_round = True
+			list_att.append(tr1td4.b.next_sibling.strip())
 
-			while not_next_round:
+			list_dates.append(tr1td4.text.split("Att")[0].strip())
 
-				# the below is hopefully a result table:
-				# nxt = nxt.findNext("table", {"style": "font: 12px Verdana;", "border": 1})
-				nxt = nxt.findNext("table")
+		if is_qualification(this_header_tbl):
 
-				print("next table border is:",nxt["border"])
+			statsy[year]["number_final_rounds"] += 1
 
-				# this table would normally have 2 rows..
+			this_round = this_header_tbl.b.text.strip().lower()
+			list_round_att.append(None)
+			list_total_att.append(None)
 
-				if nxt and len(nxt.find_all("tr")) == 2:  #  this should exclude Ladders
-	
-					list_rounds.append(this_round)
-	
-					team1_tr, team2_tr = nxt.find_all("tr")
-	
-					list_team_1.append(team1_tr.find("a", {"href": re.compile("teams{1}")}).text.strip())
-					list_team_2.append(team2_tr.find("a", {"href": re.compile("teams{1}")}).text.strip())
-
-					qscores_t1 = team1_tr.find("tt").text.split()
-					qscores_t2 = team2_tr.find("tt").text.split()
-
-					q1t1, q2t1, q3t1, q4t1 = qscores_t1[:4]
-					q1t2, q2t2, q3t2, q4t2 = qscores_t2[:4]
-
-					if (len(qscores_t1) == 5) and (len(qscores_t2) == 5):
-						q5t1 = qscores_t1[-1][1:-1]
-						q5t2 = qscores_t2[-1][1:-1]
-					else:
-						q5t1 = None
-						q5t2 = None
-
-					list_q1_team1.append(q1t1)
-					list_q2_team1.append(q2t1)
-					list_q3_team1.append(q3t1)
-					list_q4_team1.append(q4t1)
-					list_q5_team1.append(q5t1)
-
-					list_q1_team2.append(q1t2)
-					list_q2_team2.append(q2t2)
-					list_q3_team2.append(q3t2)
-					list_q4_team2.append(q4t2)
-					list_q5_team2.append(q5t2)
-
-					list_score_1.append(team1_tr.find("td", {'width': "5%"}).text.strip())
-					list_score_2.append(team2_tr.find("td", {'width': "5%"}).text.strip())
-					
-					list_venues.append(team1_tr.find("a", {"href": re.compile("venues{1}")}).text.strip())
-					list_att.append(team1_tr.find("b").next_sibling.strip())
-	
-					list_dates.append(team1_tr.find_all("td")[3].text.split("Att")[0].strip())
-				else:
-					not_next_round = False
-
-# now combine everything into a zip
+# now combine eerything into a zip
 data = zip(list_rounds, list_dates, list_team_1, 
 				list_q1_team1,list_q2_team1,list_q3_team1,list_q4_team1,list_q5_team1, list_score_1,
 				 list_team_2, list_q1_team2,list_q2_team2,list_q3_team2,list_q4_team2, list_q5_team2,
@@ -186,14 +198,35 @@ df = pd.DataFrame(columns="round date team1 t1q1 t1q2 t1q3 t1q4 t1q5 t1score tea
 
 for i, row in enumerate(data):
 	df.loc[i] = row
+
 print("successfully retrieved {} results..".format(len(df.index)))
 
+if show_yrecs:
+	df_statsy = pd.DataFrame.from_dict(statsy)
+	print(df_statsy)
+
 if save_flag == 0:
+
 	print(df.head(10))
+
 elif save_flag == 1:
-	csv_fl = "scraped_data_from_afltables_yrs_" + str(y_from) + "_to_" + str(y_to) + ".csv"
+
+	if y_from != y_to:
+		csv_fl = "scraped_data_from_afltables_yrs_" + str(y_from) + "_to_" + str(y_to) + ".csv"
+	else:
+		csv_fl = "scraped_data_from_afltables_" + str(y_from) + ".csv"
+
 	df.to_csv(csv_fl, index=False)
-	print("done. saved the scraped data to file {} in your current directory..".format(csv_fl))
+elif save_flag == 2:
+
+	if y_from != y_to:
+		csv_fl = "scraped_data_from_afltables_yrs_" + str(y_from) + "_to_" + str(y_to) + ".json"
+	else:
+		csv_fl = "scraped_data_from_afltables_" + str(y_from) + ".json"
+	df.to_json(csv_fl, orient='records')
+
+
+print("done. saved the scraped data to file {} in your current directory..".format(csv_fl))
 
 
 
