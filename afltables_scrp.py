@@ -13,8 +13,8 @@ import pandas as pd
 from collections import defaultdict
 
 # choose the range of years you are interested in; the earliest available year is 1897
-y_from = 2003
-y_to = 2007
+y_from = 1990
+y_to = 2016
 
 """
 choose what format to save data in:
@@ -216,7 +216,7 @@ elif save_flag == 1:
 	else:
 		csv_fl = "scraped_data_from_afltables_" + str(y_from) + ".csv"
 
-	df.to_csv(csv_fl, index=False)
+	df.to_csv(csv_fl, index=False, sep="&")
 elif save_flag == 2:
 
 	if y_from != y_to:
