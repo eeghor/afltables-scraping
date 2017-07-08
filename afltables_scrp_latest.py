@@ -10,18 +10,13 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import pandas as pd
-from collections import defaultdict
-from datetime import datetime
 import sys
-
-
+from datetime import datetime
 
 # show this 
-print("collecting latest results from scraping afltables.com...")
+print("collecting latest results from afltables.com...")
 # lists to store the scraped data
 list_rounds = []
-list_round_att = []
-list_total_att = []
 list_team_1 = []
 list_team_2 = []
 list_score_1 = []
@@ -30,216 +25,165 @@ list_dates = []
 list_att = []
 list_venues = []
 
-# lists to keep quarterly scores
-list_q1_team1 = []
-list_q2_team1 = []
-list_q3_team1 = []
-list_q4_team1 = []
-list_q5_team1 = []
-list_q1_team2 = []
-list_q2_team2 = []
-list_q3_team2 = []
-list_q4_team2 = []
-list_q5_team2 = []
-
-# stats per year
-statsy = defaultdict(lambda: defaultdict(int))
-
-
 # figure out what is today's date
 now = datetime.now()
 year, month, day = now.year, now.month, now.day
+
 # date format on the site is 06-Jun-2017
 month_num_to_letter = {i: m for i, m in enumerate("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(), 1)}
-this_month = "-".join([month_num_to_letter[month], str(year)])
-last_month = "-".join([month_num_to_letter[month-1], str(year)])
+this_month = "-".join(["{:02d}".format(day), month_num_to_letter[month], str(year)])
 
-season_line = "http://afltables.com/afl/seas/" + str(year) +".html"
+season_line = "http://afltables.com/afl/seas/" + str(now.year) +".html"
 
-page = requests.get(season_line)
+try:
+	page = requests.get(season_line)
+except:
+	print("[ERROR]: couldn't get the season page...")
+	sys.exit(0)
 
-if page.status_code == 200:
-	print("ok")
-else:
-	print("error {}!".format(year))
 
+DATE_FORMAT = r'\b\d{2}-\w{3}-\d{4}\b'
 
 # create a soup object
 soup = BeautifulSoup(page.content, 'html.parser')
 
-def contains_this_month(s):
-	return s.name == "tr" and this_month in s.text
-
-def contains_last_month(s):
-	return s.name == "tr" and last_month in s.text
-
-def contains_round(s):
-	return s.name == "tr" and "round" in s.text.lower()
-
-rows_this_month = soup.find_all(contains_this_month)  # returns a list
-
-if rows_this_month:
-	last_row_this_month = rows_this_month[-1]
-else:
-	rows_this_month = soup.find_all(contains_last_month)  # returns a list
-	if rows_this_month:
-		last_row_this_month = rows_this_month[-1]
-	else:
-		print("[ERROR]: can't find any results for this month or the month before!")
-		sys.exit(0)
-
-print(last_row_this_month.find_next(contains_round))
-
-sys.exit(0)
-# find table with border 2; there are Round, Attendance, and Total Attendance; alternatively, 
-# the table may be related to finals, which means that there's the word Finals or similar and nothing else
-
-def is_qualification(tb):
-
-	if (tb.b and 
-		(tb.b.string.strip() != "Finals") and 
-		(len(tb.find_all("tr")) == 1) and 
-			(len(tb.find_all("td")) == 1)):
-		return True
-	else:
-		return False
-
-def is_match(tb):
-
-	if (len(tb.find_all("tr")) == 2 and
-			tb.has_attr("border") and
-				 tb["border"] == "1"):
-		return True
-	else:
-		return False
-
-#
-# is this tag a table that sits right on top of the match result tables
-# 
-def is_round(tb):
-
-	if (tb.has_attr("border") and 
-			tb["border"] == "2" and
-		 		len(tb.find_all("tr")) == 1 and 
-		 			len(tb.find_all("td")) == 2):
-		return True
-	else:
-		return False
-
-mtb = 0
-
-for i, this_header_tbl in enumerate(soup.find_all("table")):
-
-	if is_round(this_header_tbl):
-
-		statsy[year]["number_rounds"] += 1
-		
-		td1, td2 = this_header_tbl.find_all("td")
-
-		this_round = td1.text.strip().lower()
-
-		t2b1, t2b2 = td2.find_all("b")
-
-		list_round_att.append(t2b1.next_sibling.strip().lower())
-		list_total_att.append(t2b2.next_sibling.strip().lower())
-
-	if is_match(this_header_tbl):
-
-		
-		statsy[year]["number_games"] += 1
-
-		list_rounds.append(this_round)
-
-		team1_tr, team2_tr = this_header_tbl.find_all("tr")
-		list_team_1.append(team1_tr.find("a", {"href": re.compile("teams{1}")}).text.strip())
-		list_team_2.append(team2_tr.find("a", {"href": re.compile("teams{1}")}).text.strip())
-		qscores_t1 = team1_tr.find("tt").text.split()
-		qscores_t2 = team2_tr.find("tt").text.split()
-
-		q1t1, q2t1, q3t1, q4t1 = qscores_t1[:4]
-		q1t2, q2t2, q3t2, q4t2 = qscores_t2[:4]
-
-		if (len(qscores_t1) == 5) and (len(qscores_t2) == 5):
-			q5t1 = qscores_t1[-1][1:-1]
-			q5t2 = qscores_t2[-1][1:-1]
+def cd(tag_name, width_value):
+	def wrapper(tag):
+		if (tag.name == tag_name) and ("width" in tag.attrs):
+				if tag.attrs["width"] == width_value:
+					for l in tag.stripped_strings:
+						if l:
+							if re.compile(DATE_FORMAT).search(l):  # r means all escape codes will be ignored
+								return True
+							else:
+								continue  # to the next string
+						else:
+							continue  # move on as the string is empty
+						return False  # if got to here, nothing has been found
+				else:
+					return False
 		else:
-			q5t1 = None
-			q5t2 = None
+			return False
+	return wrapper
 
-		list_q1_team1.append(q1t1)
-		list_q2_team1.append(q2t1)
-		list_q3_team1.append(q3t1)
-		list_q4_team1.append(q4t1)
-		list_q5_team1.append(q5t1)
-		list_q1_team2.append(q1t2)
-		list_q2_team2.append(q2t2)
-		list_q3_team2.append(q3t2)
-		list_q4_team2.append(q4t2)
-		list_q5_team2.append(q5t2)
+def nearest_date():
 
-		list_score_1.append(team1_tr.find("td", {'width': "5%"}).text.strip())
-		list_score_2.append(team2_tr.find("td", {'width': "5%"}).text.strip())
-		
-		list_venues.append(team1_tr.find("a", {"href": re.compile("venues{1}")}).text.strip())
+	date_list = []
+	tbls = soup.find_all(cd("td", "85%"))
+	for td in soup.find_all(cd("td", "85%")):  # returns a list
+		for l in td.stripped_strings:
+			r = re.compile(DATE_FORMAT).search(l)
+			if r:
+				date_list.append(datetime.strptime(r.group(0), "%d-%b-%Y"))
+	for tb in soup.find_all(cd("table", "100%")):  # returns a list
+		r = re.compile(DATE_FORMAT).search(tb.text)
+		if r:
+			date_list.append(datetime.strptime(r.group(0), "%d-%b-%Y"))
 
-		tr1td1,tr1td2,tr1td3,tr1td4 = team1_tr.find_all("td")
+	return min([dt for dt in date_list if now > dt], key=lambda _: now - _).strftime("%d-%b-%Y")
 
-		list_att.append(tr1td4.b.next_sibling.strip())
+def collect_match_info_from_tds(tag):
 
-		list_dates.append(tr1td4.text.split("Att")[0].strip())
+	for i, c in enumerate(tag.find_all("td")):
+		if i == 0:
+			team1 = c.text.strip()
+		elif i == 1:
+			# quarter scores here, we don't need them
+			pass
+		elif i == 2:
+			team1score = c.text.strip().lower()
+		elif i == 3:
+			venue = c.text.split("Venue:")[-1].strip()
+			search_attend = re.compile(r'Att:\s\d+,\d+').search(c.text)
+			att = search_attend.group(0).split(":")[-1].strip() if search_attend else ''
+			if not (('AM' in c.text) or ('PM' in c.text)):
+				if ":" in c.text:
+					dt = " ".join(c.text.split(":")[0].split()[:2]).strip()
+				else:
+					dt = ''
+			else:
+				dt = c.text.split("Att:")[0].strip()
+		elif i == 4:
+			team2 = c.text.strip()
+		elif i == 5:
+			# quarter scores here, we don't need them
+			pass
+		elif i == 6:
+			team2score = c.text.strip().lower()
+		elif i == 7:
+				pass
+	return (dt, team1, team1score, team2, team2score, venue, att)
 
-	if is_qualification(this_header_tbl):
+print("today is {}".format(this_month))
 
-		statsy[year]["number_final_rounds"] += 1
+nearest = nearest_date()
+print("latest round played on {}".format(nearest))
 
-		this_round = this_header_tbl.b.text.strip().lower()
-		list_round_att.append(None)
-		list_total_att.append(None)
+ROUND_RESULTS_FOUND = False
+
+for td in soup.find_all(cd("td", "85%")):
+
+	if re.compile(nearest).search(td.text):
+
+		ROUND_RESULTS_FOUND = True
+
+		# find what round it is
+		this_round = ''
+		for p in td.parents:
+			if p.name == "table":
+				for s in p.previous_siblings:
+					if s.name == "table":
+						search_round = re.compile(r'\bRound\s+\d+\b').search(s.text)
+						if search_round:
+							this_round = search_round.group(0).lower()
+		if not this_round:
+			print("[WARNING]: can't find which round was the latest...")
+
+		for table in td.find_all("table"):   # 1 table = 1 match
+			list_rounds.append(this_round)
+			dt, team1, team1score, team2, team2score, venue, att = collect_match_info_from_tds(table)
+			list_dates.append(dt)
+			list_team_1.append(team1)
+			list_score_1.append(team1score)
+			list_team_2.append(team2)
+			list_score_2.append(team2score)
+			list_venues.append(venue)
+			list_att.append(att)
+
+		break  # no need ot search more tds
+
+if not ROUND_RESULTS_FOUND:
+
+	print("[WARNING]: couldn't find any regular rounds, checking finals...")
+
+	for tb in soup.find_all(cd("table", "100%")):
+		if re.compile(nearest).search(tb.text):
+			# have the right table
+			ROUND_RESULTS_FOUND = True
+			# find what round it is
+			try:
+				this_round = tb.previous_sibling.previous_sibling.text.strip().lower()
+			except:
+				this_round = ''
+			if not this_round:
+				print("[WARNING]: can't find any finals round...")
+			else:
+				print(this_round)
+
+			dt, team1, team1score, team2, team2score, venue, att = collect_match_info_from_tds(tb)
+			list_rounds.append(this_round)
+			list_dates.append(dt)
+			list_team_1.append(team1)
+			list_score_1.append(team1score)
+			list_team_2.append(team2)
+			list_score_2.append(team2score)
+			list_venues.append(venue)
+			list_att.append(att)
+
+			break
 
 # now combine eerything into a zip
-data = zip(list_rounds, list_dates, list_team_1, 
-				list_q1_team1,list_q2_team1,list_q3_team1,list_q4_team1,list_q5_team1, list_score_1,
-				 list_team_2, list_q1_team2,list_q2_team2,list_q3_team2,list_q4_team2, list_q5_team2,
-					list_score_2, list_venues, list_att)
-
-
-# put the data into a pandas data frame
-df = pd.DataFrame(columns="round date team1 t1q1 t1q2 t1q3 t1q4 t1q5 t1score team2 t2q1 t2q2 t2q3 t2q4 t2q5 t2score venue attendance".split())
-
-for i, row in enumerate(data):
-	df.loc[i] = row
-
-print("successfully retrieved {} results..".format(len(df.index)))
-
-if show_yrecs:
-	df_statsy = pd.DataFrame.from_dict(statsy)
-	print(df_statsy)
-
-if save_flag == 0:
-
-	print(df.head(10))
-
-elif save_flag == 1:
-
-	if y_from != y_to:
-		csv_fl = "scraped_data_from_afltables_yrs_" + str(y_from) + "_to_" + str(y_to) + ".csv"
-	else:
-		csv_fl = "scraped_data_from_afltables_" + str(y_from) + ".csv"
-
-	df.to_csv(csv_fl, index=False, sep="&")
-elif save_flag == 2:
-
-	if y_from != y_to:
-		csv_fl = "scraped_data_from_afltables_yrs_" + str(y_from) + "_to_" + str(y_to) + ".json"
-	else:
-		csv_fl = "scraped_data_from_afltables_" + str(y_from) + ".json"
-	df.to_json(csv_fl, orient='records')
-
-
-print("done. saved the scraped data to file {} in your current directory..".format(csv_fl))
-
-
-
-
-
-
+data = zip(list_rounds, list_dates, list_team_1,
+				 list_team_2, list_score_2, list_venues, list_att)
+for d in data:
+	print(d)
