@@ -13,10 +13,7 @@ import pandas as pd
 import sys
 from datetime import datetime
 import boto3
-
-# show this
-print("collecting latest results from afltables.com...")
-# lists to store the scraped data
+import schedule
 
 class ScoreCollector(object):
 
@@ -40,6 +37,7 @@ class ScoreCollector(object):
 		# date format on the site is 06-Jun-2017
 		ml = {i: m for i, m in enumerate("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(), 1)}
 		self.date_now = "-".join(["{:02d}".format(day), ml[month], str(year)])
+		self.RESULT_FILE_NAME = "afl-latest-" + self.date_now + ".csv"
 
 		self.SEASON_LINE = "http://afltables.com/afl/seas/" + str(self.now.year) +".html"
 
@@ -132,10 +130,10 @@ class ScoreCollector(object):
 
 	def search_for_results(self):
 
-		print("today is {}".format(self.date_now))
+		# print("today is {}".format(self.date_now))
 
 		nearest = self.nearest_date()
-		print("latest round played on {}".format(nearest))
+		# print("latest round played on {}".format(nearest))
 
 		ROUND_RESULTS_FOUND = False
 
@@ -201,20 +199,36 @@ class ScoreCollector(object):
 
 		return self
 
+	def save_as_csv(self):
+
+		data = (pd.DataFrame({"round" : self.list_rounds, "date": self.list_dates,
+							"team1": self.list_team_1, "team1selfore": self.list_score_1,
+							"team2": self.list_team_2, "team2selfore": self.list_score_2,
+							"venue": self.list_venues, "attendance": self.list_att}, 
+							columns=["round date team1 team1selfore team2 team2selfore venue attendance"
+							.split()]).to_csv(self.RESULT_FILE_NAME, sep="&", index=False))
+		return self
+
+	def send_to_s3(self):
+
+		s3 = boto3.resource('s3')
+		s3.meta.client.upload_file(self.RESULT_FILE_NAME,
+		'tega-uploads', "Igor/afl-latest/" + self.RESULT_FILE_NAME)
+
+		return self
+
 if __name__ == "__main__":
 
-	sc = ScoreCollector()._get_season_page().search_for_results()
-	# now combine eerything into a data frame
-	data = pd.DataFrame({"round" : sc.list_rounds, "date": sc.list_dates,
-					"team1": sc.list_team_1, "team1score": sc.list_score_1,
-					"team2": sc.list_team_2, "team2score": sc.list_score_2,
-					"venue": sc.list_venues, "attendance": sc.list_att}, 
-					columns=["round date team1 team1score team2 team2score venue attendance".split()])
+	def job():
+		(ScoreCollector()
+			._get_season_page()
+			.search_for_results()
+			.save_as_csv()
+			.send_to_s3())
 
-	data.to_csv("afl-latest-" + sc.date_now + ".csv", sep="&", index=False)
+	schedule.every().saturday.at("22:30").do(job)
 
-	s3 = boto3.resource('s3')
-	s3.meta.client.upload_file("afl-latest-" + sc.date_now + ".csv", 
-		'tega-uploads', "Igor/afl-latest/afl-latest-" + sc.date_now + ".csv")
+	while True:
+		schedule.run_pending()
 
 
