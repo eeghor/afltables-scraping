@@ -48,31 +48,36 @@ class ScoreCollector(object):
 			print("[ERROR]: couldn't get the season page...")
 			sys.exit(0)
 		# create a soup object
-		self.soup = BeautifulSoup(page.content, 'html.parser')
+		self.soup = BeautifulSoup(page.content, "lxml")
 
 		return self
 
 	def cd(self, tag_name, width_value):
 		"""
-		wrapper to pass arguments to a function that looks for tags with
-		certain width attrs
+		wrapper to pass arguments to a function that returns TRUE if it's a tag with name tag_name, width equal to width_value
+		and contains a data in DATE_FORMAT
 		"""
 		def wrapper(tag):
-			if (tag.name == tag_name) and ("width" in tag.attrs):
-					if tag.attrs["width"] == width_value:
-						for l in tag.stripped_strings:
-							if l:
-								if re.compile(self.DATE_FORMAT).search(l):  # r means all escape codes will be ignored
-									return True
-								else:
-									continue  # to the next string
-							else:
-								continue  # move on as the string is empty
-							return False  # if got to here, nothing has been found
-					else:
-						return False
-			else:
+
+			if tag.name != tag_name:
 				return False
+
+			try:
+				this_tag_width = tag.attrs["width"]
+			except:
+				return False
+
+			if this_tag_width != width_value:
+				return False
+
+			found_date = False
+			for td in tag.find_all("td"):
+				if re.compile(self.DATE_FORMAT).search(td.text):
+					found_date = True
+					break
+
+			return found_date
+
 		return wrapper
 
 	def nearest_date(self):
@@ -130,10 +135,10 @@ class ScoreCollector(object):
 
 	def search_for_results(self):
 
-		# print("today is {}".format(self.date_now))
+		print("today is {}".format(self.date_now))
 
 		nearest = self.nearest_date()
-		# print("latest round played on {}".format(nearest))
+		print("latest round played on {}".format(nearest))
 
 		ROUND_RESULTS_FOUND = False
 
@@ -143,14 +148,14 @@ class ScoreCollector(object):
 
 				ROUND_RESULTS_FOUND = True
 				# find what round it is
-				this_round = ''
+				this_round = None
 				for p in td.parents:
 					if p.name == "table":
-						for s in p.previous_siblings:
-							if s.name == "table":
-								search_round = re.compile(r'\bRound\s+\d+\b').search(s.text)
-								if search_round:
-									this_round = search_round.group(0).lower()
+						search_round = re.compile(r'\bRound\s+\d+').search(p.previous_sibling.previous_sibling.text)
+						if search_round:
+							this_round = search_round.group(0).lower()
+							break
+
 				if not this_round:
 					print("[WARNING]: can't find which round was the latest...")
 
@@ -183,7 +188,7 @@ class ScoreCollector(object):
 					if not this_round:
 						print("[WARNING]: can't find any finals round...")
 					else:
-						print(this_round)
+						pass
 
 					dt, team1, team1score, team2, team2score, venue, att = self._collect_match_info_from_tds(tb)
 					self.list_rounds.append(this_round)
@@ -201,19 +206,19 @@ class ScoreCollector(object):
 
 	def save_as_csv(self):
 
-		data = (pd.DataFrame({"round" : self.list_rounds, "date": self.list_dates,
+		pd.DataFrame({"round" : self.list_rounds, "date": self.list_dates,
 							"team1": self.list_team_1, "team1selfore": self.list_score_1,
 							"team2": self.list_team_2, "team2selfore": self.list_score_2,
 							"venue": self.list_venues, "attendance": self.list_att}, 
 							columns=["round date team1 team1selfore team2 team2selfore venue attendance"
-							.split()]).to_csv(self.RESULT_FILE_NAME, sep="&", index=False))
+							.split()]).to_csv(self.RESULT_FILE_NAME, sep="&", index=False)
 		return self
 
 	def send_to_s3(self):
 
 		s3 = boto3.resource('s3')
 		s3.meta.client.upload_file(self.RESULT_FILE_NAME,
-		'tega-uploads', "Igor/afl-latest/" + self.RESULT_FILE_NAME)
+		'tega-sportsdata', "inbound/" + self.RESULT_FILE_NAME)
 
 		return self
 
@@ -226,7 +231,7 @@ if __name__ == "__main__":
 			.save_as_csv()
 			.send_to_s3())
 
-	schedule.every().saturday.at("22:30").do(job)
+	schedule.every().monday.at("13:09").do(job)
 
 	while True:
 		schedule.run_pending()
